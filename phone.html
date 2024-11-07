@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Camera Feed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        video {
+            width: 100%;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Phone Camera Feed</h1>
+    <video id="phoneVideo" autoplay playsinline></video>
+
+    <script>
+        const phoneVideo = document.getElementById("phoneVideo");
+
+        // 1. Access the phone's camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then((stream) => {
+                phoneVideo.srcObject = stream;
+
+                // 2. Set up WebRTC connection to send the camera stream to the desktop
+                const peerConnection = new RTCPeerConnection();
+
+                // Send stream to the peer connection
+                stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+                // Placeholder signaling: Normally you'd use a signaling server to communicate with the desktop
+                const signalingChannel = new BroadcastChannel('webrtc-signaling');
+
+                signalingChannel.onmessage = async (event) => {
+                    const message = event.data;
+                    if (message.type === 'answer') {
+                        // Set the answer received from desktop
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
+                    } else if (message.type === 'candidate') {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                    }
+                };
+
+                // Create and send an offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                // Send offer to the desktop via signaling
+                signalingChannel.postMessage({ type: 'offer', offer });
+
+                // Set up ICE candidate handling
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        signalingChannel.postMessage({ type: 'candidate', candidate: event.candidate });
+                    }
+                };
+            })
+            .catch((err) => {
+                console.error("Error accessing camera:", err);
+            });
+    </script>
+</body>
+</html>
